@@ -1,4 +1,11 @@
-#.libPaths("/n/home02/tiangu/apps/R_4_1")
+---
+title: "Boxplots"
+author: "Zhuodiao Kuang"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r, packages loading and default set,echo = FALSE, message = FALSE, warning = FALSE}
 library(glmnet)
 library(lassoshooting)
 library(mvtnorm)
@@ -7,9 +14,11 @@ library(rmutil)
 library(grplasso)
 library(Matrix)
 library(sim1000G)
-
 source('fastCOMMUTE_functions.R')
 
+```
+
+```{r defaulted values}
 id <- 1# set 1 first to try. id <- as.numeric(Sys.getenv("SLURM_ARRAY_TASK_ID"))
 sim_setting <- expand.grid(sim = 1:100, delta = 0.8, h = c("(10,10;10)","(30,30;30)","(60,60;60)","(10,60;60)"), r = 25)
 
@@ -27,10 +36,11 @@ s = p/2
 n0 = 100                  #target population size
 nt = c(1000, 1500, 2000)    #source population size
 n.test = 1000
-intercept = rep(1, K+1) 
+intercept = rep(1, K+1)
+```
 
-simu = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test){
-  set.seed(sim)
+```{r create data}
+  set.seed(sim) # set seed
   n.tar <- n0 
   n.src <- nt 
   coef.all <- Coef.gen(s=s, h=h, K=K, sig.delta, p=p, exact, intercept) #exact = False?
@@ -97,84 +107,11 @@ simu = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test)
   w2 = thres(w[[2]], sqrt(n.src[2]), p)
   w3 = thres(w[[3]], sqrt(n.src[3]), p)
   
-  
-  # calculate the running time
-  start.time <- Sys.time()
-  ###fastCOMMUTE M=0
-  Z_score1 <- 1/sqrt(nrow(X.src[[1]]))*t(X.src[[1]])%*%y.src[[1]]
-  Z_score2 <- 1/sqrt(nrow(X.src[[2]]))*t(X.src[[2]])%*%y.src[[2]]
-  Z_score3 <- 1/sqrt(nrow(X.src[[3]]))*t(X.src[[3]])%*%y.src[[3]]
-  beta.fastCOMMUTE.M0 = ginv(49.81987*t(X.tar)%*%X.tar)%*%( # cannot use solve
-    t(X.tar)%*%y.tar + 
-      sqrt(nrow(X.src[[1]]))*Z_score1+10.98082*t(X.tar)%*%X.tar%*%delta.TL[[1]]+
-      sqrt(nrow(X.src[[2]]))*Z_score2+16.18668*t(X.tar)%*%X.tar%*%delta.TL[[2]]+
-      sqrt(nrow(X.src[[3]]))*Z_score3+21.65237*t(X.tar)%*%X.tar%*%delta.TL[[3]]
-  )
-  
-  
-  ###fastCOMMUTE M=1
-  
-  beta.fastCOMMUTE.M1 = ginv(38.83905*t(X.tar)%*%X.tar+t(X.src[[1]])%*%X.src[[1]])%*%(
-    t(X.tar)%*%y.tar + 
-      t(X.src[[1]])%*%y.src[[1]]+t(X.src[[1]])%*%X.src[[1]]%*%delta.TL[[1]]+
-      sqrt(nrow(X.src[[2]]))*Z_score2+16.18668*t(X.tar)%*%X.tar%*%delta.TL[[2]]+
-      sqrt(nrow(X.src[[3]]))*Z_score3+21.65237*t(X.tar)%*%X.tar%*%delta.TL[[3]]
-  )
-  
-  ###fastCOMMUTE M=2
-  
-  beta.fastCOMMUTE.M2 <- 
-    ginv(t(X.tar)%*%X.tar+t(X.src[[1]])%*%X.src[[1]]+
-           t(X.src[[2]])%*%X.src[[2]]+
-           21.65237*t(X.tar)%*%X.tar)%*%(
-             t(X.tar)%*%y.tar + 
-               t(X.src[[1]])%*%y.src[[1]]+t(X.src[[1]])%*%X.src[[1]]%*%delta.TL[[1]]+
-               t(X.src[[2]])%*%y.src[[2]]+t(X.src[[2]])%*%X.src[[2]]%*%delta.TL[[2]]+
-               sqrt(nrow(X.src[[3]]))*Z_score3+21.65237*t(X.tar)%*%X.tar%*%delta.TL[[3]]
-           )
-  
-  ###fastCOMMUTE M=3
-  
-  beta.fastCOMMUTE.M3 <- 
-    ginv(t(X.tar)%*%X.tar+t(X.src[[1]])%*%X.src[[1]]+
-           t(X.src[[2]])%*%X.src[[2]]+
-           t(X.src[[3]])%*%X.src[[3]]  )%*%(
-             t(X.tar)%*%y.tar + 
-               t(X.src[[1]])%*%y.src[[1]]+t(X.src[[1]])%*%X.src[[1]]%*%delta.TL[[1]]+
-               t(X.src[[2]])%*%y.src[[2]]+t(X.src[[2]])%*%X.src[[2]]%*%delta.TL[[2]]+
-               t(X.src[[3]])%*%y.src[[3]]+t(X.src[[3]])%*%X.src[[3]]%*%delta.TL[[3]]
-           )
-  
-  
-  
-  # plot
-  par(mfrow = c(2, 2))
-  plot(beta.fastCOMMUTE.M0)
-  plot(beta.fastCOMMUTE.M1)
-  plot(beta.fastCOMMUTE.M2,ylim = c(-1,1))
-  plot(beta.fastCOMMUTE.M3)
-  end.time <- Sys.time()
-  time.taken <- round(end.time - start.time,2)
-  print("How long do we spend time on running the fastCOMMUTE code?:")
-  print(time.taken)
-  
-  
-  
-  methods = c('beta.tar', 'w1', 'w2', 'w3', 
-              'beta.fastCOMMUTE.M0','beta.fastCOMMUTE.M1',
-              'beta.fastCOMMUTE.M2','beta.fastCOMMUTE.M3')
-  mseout = c()
-  for(i in 1:length(methods)){
-    mseout = c(mseout, mse.fun(beta.true, as.numeric(get(methods[i]))))
-    
-  }
-  
-  return(list(cbind(methods, mseout)))
-}
+```
 
-
-out = tryCatch(simu(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test), error=function(err) list(matrix(NA,8,2)))
-save(out, file = paste0(dir_out, 'h=', h.tmp, '_delta=', sig.delta, '_exact=', exact, '_ntimes=', r, '_2size_', sim,'.Rdata'))
-
+```{r plots}
+ source('core_functions.R')
+ a<-beta_fastCOMMUTE_generation(K, method = "commute",X.tar,X.src,y.tar,y.src,delta.TL)
+```
 
 

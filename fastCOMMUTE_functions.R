@@ -1,3 +1,4 @@
+
 ### Rewrite GhostKnockoff
 # Check that the input matrix is positive-definite
 is_posdef = function(A, tol=1e-9) {
@@ -182,7 +183,8 @@ GhostKnockoff.prelim <- function(cor.X, M=r, method = 'asdp', max.size = 500){
       }
     } 
     #### Here we make some changes
-    P.each[temp.index, temp.index] <-s * SigmaInv - diag(1, length(s))   
+    CHANGEEVERYTHING = 0
+    P.each[temp.index, temp.index] <-CHANGEEVERYTHING*s * SigmaInv - diag(1, length(s))   
 
     V.index <- rep(temp.index, M) + rep(0:(M - 1), each = length(temp.index)) * 
       n.X
@@ -244,14 +246,16 @@ GhostKnockoff.fit <- function(Zscore_0,n.study,fit.prelim,gamma=1,weight.study=N
 Coef.gen<- function(s, h, K, sig.delta, p, exact=TRUE, intercept){
   # add 1 for all change
   beta <- c(seq(0.4, 0.1, length.out=(s/2)), -seq(0.4, 0.1, length.out=(s/2)), rep(0, p - s))# +50 -50 1900(all0)
-  w <- matrix(rep(beta, K), p, K)  #2000 3  ###h^*=0
+  w <- matrix(rep(beta, K), p, K)  
+  # h stands for the difference betweeen beta(target) and w(source)
   if(exact==TRUE){
     samp <- sample(1:p, h, replace=F)
     sign <- sample(c(-1,1), h, replace=T)
     for(k in 1:K){
       w[samp, k] <- w[samp, k] + sign*rep(as.numeric(sig.delta[k]), h)
     }
-  }else{
+  }# don't understand that else is for.
+  else{
     total_p = 1:p
     # Temporarily change the value of samp0, sign
     samp0 <- sample(total_p, h[1], replace=F) # previous h=min(h), here I set h[1]
@@ -273,9 +277,9 @@ Coef.gen<- function(s, h, K, sig.delta, p, exact=TRUE, intercept){
     }
   }
   
-  ##why delete it??
-  # beta = c(intercept[1], beta)
-  # w = rbind(intercept[-1], w)
+  ## if you wanna intercepts for the model, add following two lines
+   beta = c(intercept[1], beta)
+   w = rbind(intercept[-1], w)
   
   return(list(beta=beta, w=w))
 }
@@ -434,15 +438,20 @@ create.synthetic.ghostknoff.PLANB <- function(X.tar, y.tar, r){
 }
 
 
+### Although We didn't set intercepts for the true model, when
+### generating estimates of betas, there will still be intercepts.
 
 ST.init<-function(X.tar,y.tar){ 
-  #single-task initialization
+  # single-task initialization
   p <- ncol(X.tar)
   n0.tar <- length(y.tar)
-  fit <- cv.glmnet(x=X.tar, y=y.tar, nfolds = 4, family='binomial')
+  # beta0 = ginv(t(X.tar)%*%X.tar)%*%t(X.tar)%*%y.tar
+  
+  fit <- cv.glmnet(x=X.tar, y=y.tar, nfolds = 4, family='gaussian')
   lam.const = fit$lambda.min / sqrt(2*log(p)/n0.tar)
-  beta0 = c(fit$glmnet.fit$a0[which(fit$lambda == fit$lambda.min)], fit$glmnet.fit$beta[, which(fit$lambda == fit$lambda.min)])
+  beta0 = c(fit$glmnet.fit$beta[, which(fit$lambda == fit$lambda.min)])
   return(list(beta0=as.numeric(beta0), lam.const=as.numeric(lam.const)))
+  # return(beta0)
 }
 
 TL.init<-function(X.tar, y.tar, X.src, y.src, w=NULL){
@@ -452,17 +461,17 @@ TL.init<-function(X.tar, y.tar, X.src, y.src, w=NULL){
   
   if(is.null(w)){
     #source population estimates
-    fit.src <- cv.glmnet(x=X.src, y=y.src, family='binomial', nfolds=4, lambda=seq(0.25, 0.05, length.out=20)*sqrt(2*log(p)/n0.tar))
+    fit.src <- cv.glmnet(x=X.src, y=y.src, family='gaussian', nfolds=4, lambda=seq(0.25, 0.05, length.out=20)*sqrt(2*log(p)/n0.tar))
     lam.const = fit.src$lambda.min / sqrt(2*log(p)/n0.src)
     # temp change of w0 : delete: fit.src$glmnet.fit$a0[which(fit.src$lambda == fit.src$lambda.min)],
-    w0 <- c(fit.src$glmnet.fit$a0[which(fit.src$lambda == fit.src$lambda.min)], fit.src$glmnet.fit$beta[, which(fit.src$lambda == fit.src$lambda.min)])
+    w0 <- fit.src$glmnet.fit$beta[, which(fit.src$lambda == fit.src$lambda.min)]
   }else{
     w0 = w
   }
   
   #target population estimates
-  fit.tar <- cv.glmnet(x=X.tar, y=y.tar, nfolds=5, family='binomial', offset=w0[1]+X.tar%*%w0[-1], lambda=seq(0.25, 0.05, length.out=20)*sqrt(2*log(p)/n0.tar))
-  delta0 = c(fit.tar$glmnet.fit$a0[which(fit.tar$lambda == fit.tar$lambda.min)], fit.tar$glmnet.fit$beta[, which(fit.tar$lambda == fit.tar$lambda.min)])
+  fit.tar <- cv.glmnet(x=X.tar, y=y.tar, nfolds=5, family='gaussian', offset=X.tar%*%w0, lambda=seq(0.25, 0.05, length.out=20)*sqrt(2*log(p)/n0.tar))
+  delta0 = fit.tar$glmnet.fit$beta[, which(fit.tar$lambda == fit.tar$lambda.min)]
   
   return(list(w0=w0, delta0=delta0, beta0=w0+delta0))
 }
@@ -472,101 +481,7 @@ thres<-function(b, k, p){
 }
 
 
-Trans.global<-function(X.tar, y.tar, X.src, y.src, delta=NULL){
-  p <- ncol(X.tar)
-  n0.tar <- length(y.tar)
-  K <- length(y.src)  ###(K>1)
-  ##global method
-  Xdelta = c()
-  if(is.null(delta)){
-    for(k in 1:K){
-      w.k = as.numeric(ST.init(X.src[[k]], y.src[[k]])$beta0)
-      fit.tar <- cv.glmnet(x=X.tar, y=y.tar, nfolds=5, family='binomial', offset=w.k[1]+X.tar%*%w.k[-1], lambda=seq(0.25, 0.05, length.out=20)*sqrt(2*log(p)/n0.tar))
-      delta.k = c(fit.tar$glmnet.fit$a0[which(fit.tar$lambda == fit.tar$lambda.min)], fit.tar$glmnet.fit$beta[, which(fit.tar$lambda == fit.tar$lambda.min)])
-      delta.k.thre = thres(delta.k, sqrt(n0.tar), p) ###+threshold
-      Xdelta.k = tcrossprod(delta.k.thre[-1], X.src[[k]])+delta.k.thre[1]
-      Xdelta = c(Xdelta, Xdelta.k)
-    }
-  }else{
-    for(k in 1:K){
-      Xdelta.k = tcrossprod(delta[[k]][-1], X.src[[k]])+delta[[k]][1]
-      Xdelta = c(Xdelta, Xdelta.k)
-    }
-  }
-  
-  XX.src <- yy.src <- NULL
-  for(k in 1:K){
-    XX.src <- rbind(XX.src, X.src[[k]])
-    yy.src <- c(yy.src, y.src[[k]])
-  }
-  
-  n0.tar.global <- length(c(y.tar,yy.src))
-  offset <- c(rep(0, nrow(X.tar)), -Xdelta)
-  fit.global <- cv.glmnet(x=rbind(X.tar,XX.src), y=c(y.tar,yy.src), nfolds=5, family='binomial', offset=offset, lambda=seq(0.25, 0.05, length.out=20)*sqrt(2*log(p)/n0.tar.global))
-  beta.hat = c(fit.global$glmnet.fit$a0[which(fit.global$lambda == fit.global$lambda.min)], fit.global$glmnet.fit$beta[, which(fit.global$lambda == fit.global$lambda.min)])
-  
-  return(beta.hat)
-}
-
-Agg.fun<-function(B, X.til, y.til, const=2){
-  X.til = cbind(1, X.til)
-  loss.B <- apply(B, 2, function(b) - sum(y.til*log(logistic(X.til%*%b))+(1-y.til)*log(1-logistic(X.til%*%b))))
-  eta.hat <- exp(-const*loss.B)/sum(exp(-const*loss.B))
-  return(eta.hat)
-}
-
-Agg.fun.new<-function(B, X.til, y.til, const=2){
-  X.til = cbind(1, X.til)
-  XX = X.til%*%B
-  eta.hat = glm(y.til~XX-1, family = binomial(link = "logit"))$coefficients
-  #eta.hat = glm(y.til~XX-1, family = gaussian)$coefficients
-  return(eta.hat)
-}
-
-rep.col<-function(x,n){
-  matrix(rep(x,each=n), ncol=n, byrow=TRUE)
-}
-
-Agg.fun.Q<-function(B, X.til, y.til, total.step=10){
-  p <- nrow(B)
-  K <- ncol(B)
-  X.til = cbind(1, X.til)
-  
-  XB = X.til%*%B
-  colnames(B) <- NULL
-  temp_delta = (rep.col(y.til, K) - XB)^2
-  temp_delta <- ifelse(is.na(temp_delta), max(temp_delta), temp_delta)
-  
-  theta.hat <- exp(-colSums(temp_delta)/2)
-  theta.hat <- ifelse(is.na(theta.hat), 0, theta.hat)
-  theta.hat = theta.hat/sum(theta.hat)
-  theta.old = theta.hat
-  beta <- as.numeric(B%*%theta.hat)
-  beta.ew <- beta
-  
-  Xbeta = X.til%*%beta
-  for(ss in 1:total.step){
-    theta.hat <- exp(-colSums(temp_delta)/2 + colSums((rep.col(Xbeta, K) - XB)^2)/8)
-    if(is.na(sum(theta.hat))){
-      break
-    }
-    theta.hat <- theta.hat/sum(theta.hat)
-    beta <- as.numeric(B%*%theta.hat*1/4 + 3/4*beta)
-    if(sum(abs(theta.hat-theta.old)) < 10^(-3)){
-      break
-    }
-    theta.old = theta.hat
-  }
-  
-  return(theta.hat)
-}
-
 mse.fun<- function(beta.true, est, X.test=NULL){
   sum((beta.true[-1]-est[-1])^2)
 }
 
-get.auc = function(X, y, beta){
-  pred.y = logistic(X%*%beta)
-  #mean(abs(y.test1-pred.y))
-  pROC::auc(pROC::roc(y, as.numeric(pred.y)))
-}
