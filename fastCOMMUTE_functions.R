@@ -183,9 +183,10 @@ GhostKnockoff.prelim <- function(cor.X, M=r, method = 'asdp', max.size = 500){
       }
     } 
     #### Here we make some changes
-    CHANGEEVERYTHING = 0
-    P.each[temp.index, temp.index] <-CHANGEEVERYTHING*s * SigmaInv - diag(1, length(s))   
-
+    CHANGEEVERYTHING = 1
+    #P.each[temp.index, temp.index] <-CHANGEEVERYTHING*s * SigmaInv - diag(1, length(s))   
+    # original: P.each[temp.index, temp.index] <-diag(1, length(s)) - s * SigmaInv
+    P.each[temp.index, temp.index] <- diag(1, length(s))-s * SigmaInv 
     V.index <- rep(temp.index, M) + rep(0:(M - 1), each = length(temp.index)) * 
       n.X
     Normal_50Studies[V.index, ] <- as.matrix(V.left %*% matrix(rnorm(ncol(V.left) * 
@@ -431,7 +432,7 @@ create.synthetic.ghostknoff.PLANB <- function(X.tar, y.tar, r){
   n.study <- nrow(X.tar)
   
   # knockoff data, gamma = 1
-  GK.stat<-GhostKnockoff.fit(Zscore_0,n.study,fit.prelim,gamma=0.1,weight.study=NULL)
+  GK.stat<-GhostKnockoff.fit(Zscore_0,n.study,fit.prelim,gamma=1,weight.study=NULL)
   Zscore_syn <- GK.stat$GK.Zscore_k #df: nrow(X)*r
   
   return(list(Zscore_0,Zscore_syn,GK.stat))

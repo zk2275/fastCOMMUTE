@@ -14,6 +14,7 @@ library(rmutil)
 library(grplasso)
 library(Matrix)
 library(sim1000G)
+library(ggplot2)
 source('fastCOMMUTE_functions.R')
 
 ```
@@ -26,92 +27,52 @@ sim = sim_setting[id, 'sim']
 sig.delta = sim_setting[id, 'delta'] 
 h.tmp = sim_setting[id, 'h'] 
 h = c(as.numeric(gsub(".*\\((.*)\\,.*", "\\1", h.tmp)), as.numeric(gsub(".*\\,(.*)\\;.*", "\\1", h.tmp)), as.numeric(gsub(".*\\;(.*)\\).*", "\\1", h.tmp)))
+h= c(20,20,20, 20, 20)
 r = sim_setting[id, 'r']
 dir_out = 'path_to_save_result'
 
 exact = FALSE             #TRUE=S1; FALSE=S2
-K = 3                     #total number of source population 
+K = 5                     #total number of source population 
 p = 200                  #number of variables
 s = p/2
 n0 = 100                  #target population size
-nt = c(1000, 1500, 2000)    #source population size
+nt = c(2000, 2000, 2000, 2000, 2000)    #source population size
 n.test = 1000
 intercept = rep(1, K+1)
 ```
 
-```{r create data}
-  set.seed(sim) # set seed
-  n.tar <- n0 
-  n.src <- nt 
-  coef.all <- Coef.gen(s=s, h=h, K=K, sig.delta, p=p, exact, intercept) #exact = False?
-  beta.true <- as.numeric(coef.all$beta)
-  B=cbind(beta.true, coef.all$w) #for target then for source(w for source)
-  
-  X.pool = data.matrix(read.table('./Xpool.txt', header = F))
-  # Choose 200 variables for simulation temporarily
-  X.pool = X.pool[,1:p]
-  # There are 20000 rows, just sample n.tar(100) rows for target
-  sample.tar = sample(1:nrow(X.pool), n.tar, replace = FALSE)
-  # Sample out
-  X.tar = X.pool[sample.tar,] 
-  # include intercepts
-  X.tar = cbind(rep(1,nrow(X.tar)),X.tar)
-  # Generate y.tar using MLR, without intercept, don't forget the epsilon. 
-  y.tar<- X.tar %*% beta.true + rnorm(nrow(X.tar))
-  
-  # temp generate values for the targeted response variable
-  # y.tar.fast.M3 <- X.tar%*%beta.true
-  
-  # renew X.pool
-  X.pool = X.pool[-sample.tar,] 
-  X.src <- y.src <- list()
-  for(k in 1:K){
-    # from the rest of X.pool, get all of the source data
-    sample.k = sample(1:nrow(X.pool), n.src[k], replace = FALSE) 
-    X.src[[k]] = X.pool[sample(1:nrow(X.pool), n.src[k], replace = FALSE),] 
-    # include intercepts
-    X.src[[k]] = cbind(rep(1,nrow(X.src[[k]])),X.src[[k]])
-    y.src[[k]]<- X.src[[k]]%*%B[, k+1]+ rnorm(nrow(X.src[[k]]))
-    X.pool = X.pool[-sample.k,]
-  }
-  
-  # Test data
-  X.test = X.pool[sample(1:nrow(X.pool), n.test, replace = FALSE),]
-  # include intercepts
-  X.test = cbind(rep(1,nrow(X.test)),X.test)
-  y.test <- X.test%*%B[,1]+rnorm(n.test)
-  
-  
-  ###directly use cv.glmnet to fit lasso
-  beta.tar <- as.numeric(ST.init(X.tar, y.tar)$beta0)
-  
-  w = list()
-  TL = list()
-  for(k in 1:K){
-    w[[k]] <- as.numeric(ST.init(X.src[[k]], y.src[[k]])$beta0)
-    print(paste0('w',k))
-    TL[[k]] <- TL.init(X.tar, y.tar, X.src=X.src[[k]], y.src=y.src[[k]], w=w[[k]])
-    print(paste0('beta.TL',k))
-  }
-  
-  ###calculate delta for each source
-  delta.TL = list()
-  for(k in 1:K){
-    delta.TL[[k]] = thres(TL[[k]]$delta0, n.tar, p) ###add threshold
-  }
-  
-  
-  
-  #source-only LASSO + threshold
-  w1 = thres(w[[1]], sqrt(n.src[1]), p)
-  w2 = thres(w[[2]], sqrt(n.src[2]), p)
-  w3 = thres(w[[3]], sqrt(n.src[3]), p)
-  
-```
-
 ```{r plots}
- source('core_functions.R')
- a<-beta_fastCOMMUTE_generation(K, method = "commute",X.tar,X.src,y.tar,y.src,delta.TL)
+ source('core_functions_v4_woodbury.R')
+ LOOP=1
+ mseout = matrix(0,LOOP,K+1)
+for (loop in 1:LOOP) {
+#set.seed(sim = loop)
+ DATA<-data_generation(loop, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test)
+ X.tar =DATA$X.tar
+ X.src =DATA$X.src
+ y.tar =DATA$y.tar
+ y.src =DATA$y.src
+ delta.TL =DATA$delta.TL
+ wthreshold = DATA$wthreshold
+ beta.tar = ginv(t(X.tar)%*%X.tar)%*%t(X.tar)%*%y.tar
+ a<-beta_fastCOMMUTE_generation(K, method = "fastcommute",X.tar,X.src,y.tar,y.src,delta.TL,wthreshold)
+ beta.true = DATA$beta.true
+
+  
+ for(i in 1:(K+1)){
+   mseout[loop,i] = mse.fun(beta.true, a[[i]])
+    
+  }
+}
+ mse.fun(beta.true, beta.tar)
 ```
 
 
+```{r}
+
+mseout<-as.data.frame(mseout)
+colnames(mseout)<-c(1:K,0)
+boxplot(mseout,
+     xlab = "Values of M", ylab = "MSE of beta",
+     main = "Boxplots of MSE with different values of M")
+```

@@ -11,63 +11,65 @@ beta_fastCOMMUTE_generation = function(K, method = "commute",X.tar,X.src,y.tar,y
   
   
   if(method == "commute"){
-     coef <- XTX_src <- XTY_src <- XTX_src_delta <- XTX_tar_delta <- coef_XTX_tar_delta<- list()
-     for (i in 1:K) {
-       XTX_src[[i]] <- t(X.src[[i]])%*%X.src[[i]]
-       XTY_src[[i]] <- t(X.src[[i]])%*%y.src[[i]]
-       coef[[i]] <- (nrow(X.src[[i]])-1)/(nrow(X.tar)-1)
-       XTX_src_delta[[i]] <- t(X.src[[i]])%*%X.src[[i]]%*%delta.TL[[i]]
-       XTX_tar_delta[[i]] <- t(X.tar)%*%X.tar%*%delta.TL[[i]] # may be unnecessary
-       coef_XTX_tar_delta[[i]] <- coef[[i]]*t(X.tar)%*%X.tar%*%delta.TL[[i]]
-     }
-     
-     #beta_commute0
-     sum0 <- list()
-     for (i in 1:K) {
-       sum0[[i]] <- nZ_score[[i]] + coef[[i]]*XTX_tar_delta[[i]]
-     }
-     
-     #sum_of_list <- Reduce(`+`, my_list)
-     beta_commute0 <- ginv((1+Reduce(`+`, coef)  )*XTX_tar  )%*%
-                      ( XTY_tar +  Reduce(`+`, sum0) )
-     
-     #beta_commute1-K
-     beta_commute <- list()
-     for (k in 1:K) {
+    scale_src_tar <- XTX_src <- XTY_src <- XTX_src_delta <- XTX_tar_delta <- scale_XTX_tar_delta<- list()
+    for (i in 1:K) {
+      XTX_src[[i]] <- t(X.src[[i]])%*%X.src[[i]]
+      XTY_src[[i]] <- t(X.src[[i]])%*%y.src[[i]]
+      scale_src_tar[[i]] <- (nrow(X.src[[i]])-1)/(nrow(X.tar)-1)
+      XTX_src_delta[[i]] <- t(X.src[[i]])%*%X.src[[i]]%*%delta.TL[[i]]
+      XTX_tar_delta[[i]] <- t(X.tar)%*%X.tar%*%delta.TL[[i]] # may be unnecessary
+      scale_XTX_tar_delta[[i]] <- scale_src_tar[[i]]*t(X.tar)%*%X.tar%*%delta.TL[[i]]
+    }
     
-       # calibrated
-         sum_calibrated <- Reduce(`+`, XTY_src[1:k])+
-                                Reduce(`+`, XTX_src_delta[1:k])
+    #beta_commute0
+    sum0 <- list()
+    for (i in 1:K) {
+      sum0[[i]] <- nZ_score[[i]] + scale_src_tar[[i]]*XTX_tar_delta[[i]]
+    }
+    
+    #sum_of_list <- Reduce(`+`, my_list)
+    beta_commute0 <- 1/(nrow(X.src[[i]])-1)*ginv(1/(nrow(X.src[[i]])-1)*(1+Reduce(`+`, scale_src_tar)  )*XTX_tar  )%*%
+      ( XTY_tar +  Reduce(`+`, sum0) )
+    
+    #beta_commute1-K
+    beta_commute <- list()
+    for (k in 1:K) {
       
-         if(k==K){
-           #combine
-           beta_commute[[k]] <- ginv(XTX_tar + 
-                                       Reduce(`+`, XTX_src[1:k]) )%*%
-             ( XTY_tar + sum_calibrated)
-         }
-         else{ 
-           # syn
-           sum_syn <- Reduce(`+`,nZ_score[(k+1):K])+
-           Reduce(`+`, coef_XTX_tar_delta[(k+1):K]) 
-           #combine
-           beta_commute[[k]] <- ginv((1+Reduce(`+`, coef[(k+1):K]) )*XTX_tar + 
-                                   Reduce(`+`, XTX_src[1:k]) )%*%
-                                (XTY_tar + sum_calibrated + sum_syn)
-         }
- 
+      # calibrated
+      sum_calibrated <- Reduce(`+`, XTY_src[1:k])+
+        Reduce(`+`, XTX_src_delta[1:k])
       
-     }
-     ### !!!put k=0 to the last one
-     beta_commute[[K+1]]<-beta_commute0
-     return (beta_commute)
+      if(k==K){
+        #combine
+        beta_commute[[k]] <-  1/(nrow(X.src[[i]])-1)*ginv(
+            1/(nrow(X.src[[i]])-1)*(XTX_tar + 
+                                    Reduce(`+`, XTX_src[1:k]) ))%*%
+          ( XTY_tar + sum_calibrated)
+      }
+      else{ 
+        # syn
+        sum_syn <- Reduce(`+`,nZ_score[(k+1):K])+
+          Reduce(`+`, scale_XTX_tar_delta[(k+1):K]) 
+        #combine
+        beta_commute[[k]] <-  1/(nrow(X.src[[i]])-1)*ginv(
+                 1/(nrow(X.src[[i]])-1)*  (XTX_tar + 
+                                    Reduce(`+`, XTX_src[1:K]) ))%*%
+          (XTY_tar + sum_calibrated + sum_syn)
+      }
+      #+Reduce(`+`, scale[(k+1):K]) )*XTX_tar
+      
+    }
+    ### !!!put k=0 to the last one
+    beta_commute[[K+1]]<-beta_commute0
+    return (beta_commute)
   }
- 
-#fastCOMMUTE
+  
+  #fastCOMMUTE
 }
 
 
 data_generation <- function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test){
-
+  
   
   set.seed(sim)
   n.tar <- n0 
@@ -139,4 +141,4 @@ data_generation <- function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact
   return(list(X.tar=X.tar,X.src=X.src,
               y.tar=y.tar,y.src=y.src,
               delta.TL=delta.TL,beta.true=beta.true))
-  }
+}
